@@ -33,6 +33,45 @@ pub const NDK_GLUE_LOOPER_EVENT_PIPE_IDENT: i32 = 0;
 /// an event can be retrieved from [`input_queue()`].
 pub const NDK_GLUE_LOOPER_INPUT_QUEUE_IDENT: i32 = 1;
 
+pub fn android_log_init() {
+    android_logger::init_once(
+        android_logger::Config::default()
+    );
+}
+
+pub fn android_log_error(tag: &str, msg: &str) {
+    let prio = ndk_sys::android_LogPriority_ANDROID_LOG_ERROR;
+    unsafe {
+        ndk_sys::__android_log_write(
+            prio as _,
+            CString::new(tag).unwrap().as_ptr() as *const _,
+            CString::new(msg).unwrap().as_ptr() as *const _,
+        );
+    }
+}
+
+pub fn android_log_debug(tag: &str, msg: &str) {
+    let prio = ndk_sys::android_LogPriority_ANDROID_LOG_DEBUG;
+    unsafe {
+        ndk_sys::__android_log_write(
+            prio as _,
+            CString::new(tag).unwrap().as_ptr() as *const _,
+            CString::new(msg).unwrap().as_ptr() as *const _,
+        );
+    }
+}
+
+pub fn android_log_info(tag: &str, msg: &str) {
+    let prio = ndk_sys::android_LogPriority_ANDROID_LOG_INFO;
+    unsafe {
+        ndk_sys::__android_log_write(
+            prio as _,
+            CString::new(tag).unwrap().as_ptr() as *const _,
+            CString::new(msg).unwrap().as_ptr() as *const _,
+        );
+    }
+}
+
 pub fn android_log(level: Level, tag: &CStr, msg: &CStr) {
     let prio = match level {
         Level::Error => ndk_sys::android_LogPriority_ANDROID_LOG_ERROR,
@@ -57,6 +96,10 @@ static mut NATIVE_ACTIVITY: Option<NativeActivity> = None;
 
 pub fn native_activity() -> &'static NativeActivity {
     unsafe { NATIVE_ACTIVITY.as_ref().unwrap() }
+}
+
+pub fn set_native_window(window: NativeWindow) {
+    *NATIVE_WINDOW.write().unwrap() = Some(window);
 }
 
 pub fn native_window() -> RwLockReadGuard<'static, Option<NativeWindow>> {
@@ -134,6 +177,8 @@ pub unsafe fn init(
     _saved_state_size: usize,
     main: fn(),
 ) {
+    android_log_init();
+    android_log_error("rust_demo", "MainAttr expand => init");
     let mut activity = NonNull::new(activity).unwrap();
     let mut callbacks = activity.as_mut().callbacks.as_mut().unwrap();
     callbacks.onStart = Some(on_start);

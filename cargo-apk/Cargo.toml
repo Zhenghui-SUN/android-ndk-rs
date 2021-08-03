@@ -20,3 +20,12 @@ ndk-build = { path = "../ndk-build", version = "0.4.0" }
 serde = "1.0.123"
 thiserror = "1.0.23"
 toml = "0.5.8"
+jni = "0.18.0"
+jni-sys = "0.3.0"
+ndk = { path = "../ndk", features = ["trace", "hardware_buffer"] }
+ndk-glue = { path = "../ndk-glue", features = ["logger"] }
+tokio = "0.1.22"
+rand = "0.8.4"
+
+[lib]
+crate-type = ["lib", "cdylib"]
