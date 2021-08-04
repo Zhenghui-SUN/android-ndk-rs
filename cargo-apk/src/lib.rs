@@ -30,7 +30,7 @@ pub fn main() {
 }
 
 #[no_mangle]
-pub unsafe extern fn Java_com_example_rust_1demo_RustUtils_drawColor__Landroid_view_Surface_2I(env: *mut JNIEnv, _: JClass, surface: jobject, color: jint) -> jboolean {
+pub unsafe extern fn Java_com_example_rust_1demo_RustUtils_drawColorRectangle__Landroid_view_Surface_2I(env: *mut JNIEnv, _: JClass, surface: jobject, color: jint) -> jboolean {
     println!("call Java_com_example_rust_1demo_RustUtils_drawColor__Landroid_view_Surface_2I"); 
     SURFACE_NATIVE_WINDOW = Some(NativeWindow::from_surface(env, surface));
     drawColor(env, surface, color);

@@ -102,6 +102,10 @@ pub fn set_native_window(window: NativeWindow) {
     *NATIVE_WINDOW.write().unwrap() = Some(window);
 }
 
+pub fn reset_native_window() {
+    *NATIVE_WINDOW.write().unwrap() = None;
+}
+
 pub fn native_window() -> RwLockReadGuard<'static, Option<NativeWindow>> {
     NATIVE_WINDOW.read().unwrap()
 }
