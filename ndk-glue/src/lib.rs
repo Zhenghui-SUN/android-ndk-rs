@@ -33,10 +33,63 @@ pub const NDK_GLUE_LOOPER_EVENT_PIPE_IDENT: i32 = 0;
 /// an event can be retrieved from [`input_queue()`].
 pub const NDK_GLUE_LOOPER_INPUT_QUEUE_IDENT: i32 = 1;
 
-pub fn android_log_init() {
+pub fn android_init() {
     android_logger::init_once(
         android_logger::Config::default()
     );
+    unsafe {
+        let mut logpipe: [RawFd; 2] = Default::default();
+        libc::pipe(logpipe.as_mut_ptr());
+        libc::dup2(logpipe[1], libc::STDOUT_FILENO);
+        libc::dup2(logpipe[1], libc::STDERR_FILENO);
+        thread::spawn(move || {
+            let tag = CStr::from_bytes_with_nul(b"RustStdoutStderr\0").unwrap();
+            let file = File::from_raw_fd(logpipe[0]);
+            let mut reader = BufReader::new(file);
+            let mut buffer = String::new();
+            loop {
+                buffer.clear();
+                if let Ok(len) = reader.read_line(&mut buffer) {
+                    if len == 0 {
+                        break;
+                    } else if let Ok(msg) = CString::new(buffer.clone()) {
+                        android_log(Level::Info, tag, &msg);
+                    }
+                }
+            }
+        });
+    
+        let looper_ready = Arc::new(Condvar::new());
+        let signal_looper_ready = looper_ready.clone();
+    
+        thread::spawn(move || {
+            let looper = ThreadLooper::prepare();
+            let foreign = looper.into_foreign();
+            foreign
+                .add_fd(
+                    PIPE[0],
+                    NDK_GLUE_LOOPER_EVENT_PIPE_IDENT,
+                    FdEvent::INPUT,
+                    std::ptr::null_mut(),
+                )
+                .unwrap();
+    
+            {
+                let mut locked_looper = LOOPER.lock().unwrap();
+                *locked_looper = Some(foreign);
+                signal_looper_ready.notify_one();
+            }
+        });
+    
+        // Don't return from this function (`ANativeActivity_onCreate`) until the thread
+        // has created its `ThreadLooper` and assigned it to the static `LOOPER`
+        // variable. It will be used from `on_input_queue_created` as soon as this
+        // function returns.
+        let locked_looper = LOOPER.lock().unwrap();
+        let _mutex_guard = looper_ready
+            .wait_while(locked_looper, |looper| looper.is_none())
+            .unwrap();
+    }
 }
 
 pub fn android_log_error(tag: &str, msg: &str) {
@@ -181,7 +234,9 @@ pub unsafe fn init(
     _saved_state_size: usize,
     main: fn(),
 ) {
-    android_log_init();
+    android_logger::init_once(
+        android_logger::Config::default()
+    );
     android_log_error("rust_demo", "MainAttr expand => init");
     let mut activity = NonNull::new(activity).unwrap();
     let mut callbacks = activity.as_mut().callbacks.as_mut().unwrap();
