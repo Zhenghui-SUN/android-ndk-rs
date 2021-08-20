@@ -58,36 +58,24 @@ pub fn android_init() {
                 }
             }
         });
-    
+    }
+}
+
+pub fn thread_init() {
+    android_log_debug("thread_init", &format!("{}", PIPE[1]));
+    unsafe {
         let looper_ready = Arc::new(Condvar::new());
         let signal_looper_ready = looper_ready.clone();
     
-        thread::spawn(move || {
-            let looper = ThreadLooper::prepare();
-            let foreign = looper.into_foreign();
-            foreign
-                .add_fd(
-                    PIPE[0],
-                    NDK_GLUE_LOOPER_EVENT_PIPE_IDENT,
-                    FdEvent::INPUT,
-                    std::ptr::null_mut(),
-                )
-                .unwrap();
-    
-            {
-                let mut locked_looper = LOOPER.lock().unwrap();
-                *locked_looper = Some(foreign);
-                signal_looper_ready.notify_one();
-            }
-        });
-    
-        // Don't return from this function (`ANativeActivity_onCreate`) until the thread
-        // has created its `ThreadLooper` and assigned it to the static `LOOPER`
-        // variable. It will be used from `on_input_queue_created` as soon as this
-        // function returns.
-        let locked_looper = LOOPER.lock().unwrap();
-        let _mutex_guard = looper_ready
-            .wait_while(locked_looper, |looper| looper.is_none())
+        let looper = ThreadLooper::prepare();
+        let foreign = looper.into_foreign();
+        foreign
+            .add_fd(
+                PIPE[0],
+                NDK_GLUE_LOOPER_EVENT_PIPE_IDENT,
+                FdEvent::INPUT,
+                std::ptr::null_mut(),
+            )
             .unwrap();
     }
 }
@@ -147,6 +135,10 @@ lazy_static! {
 
 static mut NATIVE_ACTIVITY: Option<NativeActivity> = None;
 
+pub fn set_native_activity(activity: NativeActivity) {
+    unsafe { NATIVE_ACTIVITY = Some(activity); }
+}
+
 pub fn native_activity() -> &'static NativeActivity {
     unsafe { NATIVE_ACTIVITY.as_ref().unwrap() }
 }
@@ -192,6 +184,15 @@ pub fn poll_events() -> Option<Event> {
 }
 
 unsafe fn wake(_activity: *mut ANativeActivity, event: Event) {
+    android_log_debug("wake", &format!("{}", PIPE[1]));
+    log::trace!("{:?}", event);
+    let size = std::mem::size_of::<Event>();
+    let res = libc::write(PIPE[1], &event as *const _ as *const _, size);
+    assert_eq!(res, size as _);
+}
+
+unsafe fn wake_only(event: Event) {
+    android_log_debug("wake_only", &format!("{:?}", event));
     log::trace!("{:?}", event);
     let size = std::mem::size_of::<Event>();
     let res = libc::write(PIPE[1], &event as *const _ as *const _, size);
@@ -285,6 +286,7 @@ pub unsafe fn init(
     let signal_looper_ready = looper_ready.clone();
 
     thread::spawn(move || {
+        android_log_debug("thread::spawn", "new a looper");
         let looper = ThreadLooper::prepare();
         let foreign = looper.into_foreign();
         foreign
@@ -426,4 +428,78 @@ unsafe extern "C" fn on_content_rect_changed(activity: *mut ANativeActivity, rec
     };
     *CONTENT_RECT.write().unwrap() = rect;
     wake(activity, Event::ContentRectChanged);
+}
+
+
+pub unsafe fn on_activity_start() {
+    wake_only(Event::Start);
+}
+
+pub unsafe fn on_activity_resume() {
+    wake_only(Event::Resume);
+}
+
+pub unsafe fn on_activity_save_instance_state() {
+    wake_only(Event::SaveInstanceState);
+}
+
+pub unsafe fn on_activity_pause() {
+    wake_only(Event::Pause);
+}
+
+pub unsafe fn on_activity_stop() {
+    wake_only(Event::Stop);
+}
+
+pub unsafe fn on_activity_destroy() {
+    wake_only(Event::Destroy);
+}
+
+
+pub unsafe fn on_activity_configuration_changed() {
+    wake_only(Event::ConfigChanged);
+}
+
+pub unsafe fn on_activity_low_memory() {
+    wake_only(Event::LowMemory);
+}
+
+pub unsafe fn on_activity_window_focus_changed(
+    has_focus: u8,
+) {
+    let event = if has_focus == 0 {
+        Event::WindowLostFocus
+    } else {
+        Event::WindowHasFocus
+    };
+    wake_only(event);
+}
+
+pub unsafe fn on_activity_content_rect_changed(left: u32, top: u32, right: u32, bottom: u32) {
+    let rect = Rect {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    *CONTENT_RECT.write().unwrap() = rect;
+    wake_only(Event::ContentRectChanged);
+}
+
+pub unsafe fn on_activity_window_created(window: NativeWindow) {
+    *NATIVE_WINDOW.write().unwrap() = Some(window);
+    wake_only(Event::WindowCreated);
+}
+
+pub unsafe fn on_activity_window_resized() {
+    wake_only(Event::WindowResized);
+}
+
+pub unsafe fn on_activity_window_redraw_needed() {
+    wake_only(Event::WindowRedrawNeeded);
+}
+
+pub unsafe fn on_activity_window_destroyed() {
+    wake_only(Event::WindowDestroyed);
+    *NATIVE_WINDOW.write().unwrap() = None;
 }
